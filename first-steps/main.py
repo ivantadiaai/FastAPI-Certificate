@@ -1,9 +1,46 @@
-from fastapi import FastAPI, Query, Body, HTTPException, Path
-from pydantic import BaseModel, Field, field_validator, EmailStr
+
+import os
+from datetime import datetime
+from fastapi import FastAPI, Query, Body, HTTPException, Path, status, Depends
+from pydantic import BaseModel, Field, field_validator, EmailStr, ConfigDict
 from typing import Optional, List, Union, Literal
 from math import ceil
+from sqlalchemy import create_engine, Integer, String, Text, DateTime
+from sqlalchemy.orm import sessionmaker, Session, DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.exc import SQLAlchemyError
 
+DATABASE_URL= os.getenv("DATABASE_URL","sqlite:///./blog.db")
+print("Conectado a:", DATABASE_URL)
 app = FastAPI(title="Mini Blog")
+
+engine_kwargs = {}
+if DATABASE_URL.startswith("sqlite"):
+    engine_kwargs["connect_args"]={"check_same_thread": False}
+engine = create_engine(DATABASE_URL, echo=True, future=True, **engine_kwargs)#Opcional con postgre sql
+
+SessionLocal = sessionmaker(
+    bind = engine, autoflush=False, autocommit= False, class_=Session)#Autoflush, no envia cambio hasta hacer commit
+
+class Base(DeclarativeBase):
+    pass
+
+
+class PostORM(Base):
+    __tablename__= "post"
+     #mapped representacion de tipo y mapped_colum representador
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    create_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+Base.metadata.create_all(bind=engine) #dev,crear tablas para desarrollo (si no existen), en produccion usaremos migraciones
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db #yield sirve para asegurar que el programa pause hasta que se ejecute y ya despues entra al finally
+    finally:
+        db.close()
 
 BLOG_POST=[
     {"id":1,"title": "Hola desde FastAPI","content":"Mi primer post con fastapi"},
@@ -26,17 +63,20 @@ BANNED_WORDS = {"xxx", "porn", "dick", "sex", "spam"}
 class Tag(BaseModel):
     name: str= Field(..., min_length=2, max_length=30, description="Nombre de la etiqueta")
 
+
 class Autor(BaseModel):
     name: str= Field(..., min_length=2, description="Autor del post")
     email: EmailStr
-    
+
+
 class PostBase(BaseModel):
     title: str
     content: str
     #default_factory hace una lista nueva por cada objeto que se cree
     tags: Optional[List[Tag]] = Field(default_factory=list)#[]
     autor: Optional[Autor]= None
-    
+
+
 class PostCreate(BaseModel):
     title: str = Field(
         #Field da la posibilidad de añadir validaciones más avanzadas
@@ -63,18 +103,23 @@ class PostCreate(BaseModel):
             if word in value.lower():
                 raise ValueError(f"Es titulo no puede contener la palabra {word}")
         return value
-        
+
+
 class PostUpdate(BaseModel):
     title: Optional [str]
     content: Optional[str] = None #"Valor por defecto"
-    
+
+
 class PostPublic(PostBase):
     id: int
+
+    model_config = ConfigDict(from_attributes=True)
 
 class PostSummary(BaseModel):
     id: int
     title: str
-    
+
+
 class PaginatedPost(BaseModel):
     page: int
     per_page: int
@@ -200,25 +245,35 @@ def get_post(post_id: int = Path(
     raise HTTPException(status_code=404, detail="Post no encontrado")
 
 
-@app.post("/posts", response_model=PostPublic, response_description="Post creado (OK)")
+@app.post("/posts", response_model=PostPublic, response_description="Post creado (OK)", status_code=status.HTTP_201_CREATED)
 #elipsis = ... significa que es obligatorio, None que es opcional
 #post: dict= Body(...)
-def create_post(post: PostCreate):
+#Depends significa que depende de la funcion creada antes (def get_db())
+def create_post(post: PostCreate, db: Session = Depends(get_db)):
 
     # if "title" not in post or "content" not in post:
     #     return {"error": "Title y content son requeridos"}
     # #.strip quita todos los espacios en blanco
     # if not str(post["title"]).strip():  
     #     return {"error": "Title no puede estar vacío"}
-    new_id= (BLOG_POST[-1]["id"]+1) if BLOG_POST else 1
-    new_post = {"id": new_id,
-                "title": post.title,
-                "content": post.content,
-                "tags": [tag.model_dump() for tag in post.tags],
-                "autor": post.autor.model_dump() if post.autor else None}#Esta forma de crear listas se conoce como list comprehension
-    BLOG_POST.append(new_post)
-    return new_post
-
+    #------------------------------------------------------
+    # new_id= (BLOG_POST[-1]["id"]+1) if BLOG_POST else 1
+    # new_post = {"id": new_id,
+    #             "title": post.title,
+    #             "content": post.content,
+    #             "tags": [tag.model_dump() for tag in post.tags],
+    #             "autor": post.autor.model_dump() if post.autor else None}#Esta forma de crear listas se conoce como list comprehension
+    # BLOG_POST.append(new_post)
+    # return new_post
+    new_post = PostORM(title=post.title, content=post.content)
+    try:
+        db.add(new_post)
+        db.commit()#para confirmar
+        db.refresh(new_post)#actualizar objeto en memoria
+        return new_post
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error al crear el post")
 
 #response_description define el mensaje que devuelve return
 #response_model_exclude_none define si queremos ver vacios o no
