@@ -185,7 +185,7 @@ class PostCreate(BaseModel):
     def not_allowed_title(cls, value: str) -> str:
         for word in BANNED_WORDS:
             if word in value.lower():
-                raise ValueError(f"Es titulo no puede contener la palabra {word}")
+                raise ValueError(f"El titulo no puede contener la palabra {word}")
         return value
 
 
@@ -215,6 +215,54 @@ class PaginatedPost(BaseModel):
     direction: Literal["asc","desc"]
     search: Optional[str] = None
     items: List[PostPublic]
+
+class CommentBase(BaseModel):
+    contenido: str = Field(
+        ...,
+        min_length=5,
+        max_length=500
+    )
+    autor: str = Field(
+        ...,
+        min_length=3,
+        max_length=50
+    )
+
+
+class CommentCreate(CommentBase):
+    @field_validator("contenido")
+    @classmethod
+    def word_not_allowed(cls, value:str) -> str:
+        for word in BANNED_WORDS:
+            if word in value.lower():
+                raise ValueError(f"La palabra {word} esta baneada")
+        return value
+
+class CommentPublic(CommentBase):
+    id: int
+    post_id: int
+    created_at: str
+    is_approved: bool
+
+
+class CommentUpdate(BaseModel):
+    contenido: Optional[str] = Field(
+        ..., 
+        min_length=5,
+        max_length=500
+    )
+    
+    @field_validator("contenido")
+    @classmethod
+    def word_not_allowed(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        for word in BANNED_WORDS:
+            if word in value.lower():
+                raise ValueError(f"La palabra {word} está baneada")
+        return value
+    
+COMMENTS_DB = []
     
     
 @app.get("/")
@@ -383,6 +431,28 @@ def delete_post(post_id: int):
             BLOG_POST.pop(index)
             return
     raise HTTPException(status_code=404, detail="Post no encontrado")
+
+
+
+@app.post("/posts/{post_id}/comments", response_model=CommentPublic, response_description="Comentario creado")
+def create_comment(post_id: int, comment: CommentCreate):
+    for post in BLOG_POST:
+        if post["id"] == post_id:
+            new_id= (COMMENTS_DB[-1]["id"]+1) if COMMENTS_DB else 1
+    
+            new_comment = {
+                "contenido": comment.contenido,
+                "autor": comment.autor,
+                "id": new_id,
+                "post_id": post_id,
+                "created_at": datetime.utcnow().strftime("%Y-%m-%d"),
+                "is_approved": False
+            }
+            COMMENTS_DB.append(new_comment)
+            return new_comment
+    raise HTTPException(status_code=404, detail="El post no existe")
+    
+
 
 
 #DOCUMENTACIONES AUTOMATICAS

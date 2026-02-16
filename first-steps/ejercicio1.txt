@@ -1,0 +1,58 @@
+🎯 Ejercicio Propuesto: "Sistema de Comentarios con Moderación"
+
+Objetivo: Extender tu Mini Blog añadiendo un sistema completo de comentarios con las siguientes características, usando solo los conceptos ya documentados:
+Requisitos Funcionales:
+
+Modelos de Datos (crea las clases Pydantic):
+
+CommentBase: contenido (str, mínimo 5, máximo 500 caracteres), autor (str)
+CommentCreate: hereda de CommentBase, añade validación de palabras prohibidas (usar BANNED_WORDS ya existente)
+CommentPublic: hereda de CommentBase, añade id, post_id, created_at (str), is_approved (bool)
+CommentUpdate: solo permite actualizar content y debe re-validar palabras prohibidas
+
+Almacenamiento:
+Crea COMMENTS_DB = [] (lista vacía al inicio)
+Cada comentario debe tener: id autoincremental, post_id (al que pertenece), contenido, autor, fecha creación (string simple tipo "2024-01-15"), y estado de aprobación
+
+Endpoints:
+POST /posts/{post_id}/comments - Crear comentario (el post_id debe existir en BLOG_POST, sino 404)
+
+GET /posts/{post_id}/comments - Listar comentarios aprobados de un post (con paginación: page, per_page)
+
+GET /comments/pending - Listar comentarios NO aprobados (solo para "moderación")
+
+PUT /comments/{comment_id}/approve - Cambiar estado a aprobado (toggle)
+
+DELETE /comments/{comment_id} - Eliminar comentario
+
+Lógica de Negocio:
+Al crear un comentario, debe validar que el post exista
+Los comentarios nuevos deben empezar como is_approved=False
+No se pueden crear comentarios en posts que no existen (HTTP 404)
+No se puede aprobar un comentario ya aprobado (HTTP 400 - Bad Request)
+La búsqueda de comentarios debe permitir filtrar por autor (query param opcional)
+
+
+Validaciones:
+El contenido no puede estar vacío ni solo espacios (además de las palabras prohibidas)
+El autor debe tener entre 3 y 50 caracteres
+
+
+Restricciones:
+❌ NO uses bases de datos reales (sigue con listas en memoria)
+❌ NO uses autenticación (simulada o real)
+❌ NO uses background tasks ni websockets
+✅ SÍ puedes copiar y adaptar patrones de tu código existente
+✅ SÍ puedes usar datetime para generar fechas si quieres (opcional)
+
+Criterios de Éxito:
+
+Tu solución debe pasar estas pruebas mentales:
+Crear un comentario en post ID 1 → Debe quedar pendiente
+Intentar crear comentario en post ID 999 → Debe dar 404
+Aprobar el comentario creado → Estado cambia a aprobado
+Listar comentarios de post ID 1 → Debe aparecer el aprobado
+Listar comentarios pendientes → No debe aparecer el ya aprobado
+Intentar aprobar de nuevo → Debe dar error 400
+Consejo: Empieza por los modelos Pydantic, luego la lista vacía COMMENTS_DB, y finalmente los endpoints uno por uno. Prueba cada endpoint con /docs antes de pasar al siguiente.
+¡Mucho éxito! Cuando lo termines, podemos revisarlo juntos.
