@@ -261,7 +261,19 @@ class CommentUpdate(BaseModel):
             if word in value.lower():
                 raise ValueError(f"La palabra {word} está baneada")
         return value
-    
+
+
+class PaginatedComments(BaseModel):
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_prev: bool
+    has_next: bool
+    autor: Optional[str] = None
+    items: List[CommentPublic]
+
+
 COMMENTS_DB = []
     
     
@@ -451,6 +463,71 @@ def create_comment(post_id: int, comment: CommentCreate):
             COMMENTS_DB.append(new_comment)
             return new_comment
     raise HTTPException(status_code=404, detail="El post no existe")
+
+@app.get("/posts/{post_id}/comments", response_model=CommentPublic, response_description="Listado de comentarios")
+def list_comments(
+    post_id: int = Path(
+        ...,#esperamos contenido
+        ge=1,
+        title= "ID del post",
+        description="Identificador entero del post. Debe ser mayor a 1",
+        example=1
+    ),    
+    page: int= Query(
+        10, ge=1,
+        description="Numero de paginas (>=1)"
+    ),
+    per_page: int = Query(
+        10, ge=1, le=50,
+        description="Numero de resultados (1-50)"
+    ),
+    autor: Optional[str]= Query(
+        default=None,
+        description="Filtrar por autor especifico"
+    )
+):
+    post_existe=False
+    for post in BLOG_POST:
+        if post["id"] == post_id:
+            post_existe=True
+
+            break
+    if not post_existe:
+            raise HTTPException(status_code=404, detail="El post no existe")
+        
+    resultados =[
+            c for c in COMMENTS_DB
+            if c["post_id"] == post_id
+            and c["is_approved"] 
+            and (autor is None or c["autor"]==autor)
+        ]
+
+    total=len(resultados)
+        #ceil redonde hacia abajo o arriba un decimal
+    total_pages= ceil(total/per_page) if total > 0 else 0
+        
+    if total_pages == 0:
+            current_page = 1
+    else:
+            current_page = min(page, total_pages)
+       
+    start = (current_page - 1)* per_page
+    items = resultados[start: start+per_page]
+
+    has_prev = current_page > 1
+    has_next = current_page < total_pages if total_pages > 0 else False
+        
+    return PaginatedComments(total=total, 
+                            per_page=per_page, 
+                            page=current_page,
+                            total_pages=total_pages,
+                            has_prev=has_prev,
+                            has_next=has_next,
+                            autor=autor,
+                            items=items)
+        
+            #response_model nos permite mandar diccionario 
+
     
 
 
