@@ -528,6 +528,76 @@ def list_comments(
         
             #response_model nos permite mandar diccionario 
 
+@app.get("/comments/pending", response_model=PaginatedComments, response_description="Listado de post no aprovados para programacion")
+def non_approved_comment(
+        page: int= Query(
+            1, ge=1,
+            description="Numero de paginas (>=1)"
+        ),
+        per_page: int = Query(
+            10, ge=1, le=50,
+            description="Numero de resultados (1-50)"
+        ),
+        autor: Optional[str]= Query(
+        default=None,
+        description="Filtrar por autor especifico"
+    )
+    ):
+    resultados =[
+            c for c in COMMENTS_DB
+            if c["is_approved"]== False
+        ]
+
+    total=len(resultados)
+        #ceil redonde hacia abajo o arriba un decimal
+    total_pages= ceil(total/per_page) if total > 0 else 0
+        
+    if total_pages == 0:
+            current_page = 1
+    else:
+            current_page = min(page, total_pages)
+       
+    start = (current_page - 1)* per_page
+    items = resultados[start: start+per_page]
+
+    has_prev = current_page > 1
+    has_next = current_page < total_pages if total_pages > 0 else False
+        
+    return PaginatedComments(total=total, 
+                            per_page=per_page, 
+                            page=current_page,
+                            total_pages=total_pages,
+                            has_prev=has_prev,
+                            has_next=has_next,
+                            autor=autor,
+                            items=items)
+
+@app.put("/comments/{comment_id}/approve", response_model=CommentPublic, response_description="Actualizar comentario a aprobado")
+def approve_commment(comment_id: int=Path(...)):
+
+    for comment in COMMENTS_DB:
+        if comment["comment_id"]== comment_id:
+
+            if comment["is_approved"]:
+                raise HTTPException(status_code=404, detail="Ya está aprobado")
+            
+            comment["is_approved"]= True
+
+            return comment
+    raise HTTPException(status_code=404, detail="Comentario no encontrado")
+
+
+@app.delete("/comments/{comment_id}", status_code=202)
+def delete_commment(id: int=Path(..., ge=1, description="Id del comentario")):
+
+    for index,comment in COMMENTS_DB:
+        if comment["id"]== id:
+            COMMENTS_DB.pop(index)
+            return
+    raise HTTPException(status_code=404, detail="Comentario no encontrado")
+
+    
+    
     
 
 
